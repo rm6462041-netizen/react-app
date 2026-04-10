@@ -22,69 +22,73 @@ export class TradeManager {
     }
   }
 
-  // Manual trades loader (exact columns, no fallback)
+  // Manual trades loader
   async loadManualTrades(userId) {
     try {
       const response = await fetch(`${API_URL}/api/user-trades/${userId}`);
       if (!response.ok) throw new Error('Network response was not ok');
 
       const data = await response.json();
-      if (!data.trades) this.trades = [];
-      else {
-        this.trades = data.trades.map(t => ({
-          ID: t.ID,
-          user_id: t.user_id,
-          symbol: t.symbol,
-          trade_type: t.trade_type,
-          price: t.price,
-          category: t.category,
-          exit_price: t.exit_price,
-          strategy: t.strategy,
-          quantity: t.quantity,
-          pnl: t.pnl,
-          notes: t.notes,
-          screenshots: t.screenshots,
-          timestamp: t.timestamp,
-          unique_id: t.unique_id
-        }));
-      }
+      this.trades = data.trades?.map(t => ({
+        ID: t.ID,
+        user_id: t.user_id,
+        symbol: t.symbol,
+        trade_type: t.trade_type,
+        price: t.price,
+        category: t.category,
+        exit_price: t.exit_price,
+        strategy: t.strategy,
+        quantity: t.quantity,
+        pnl: t.pnl,
+        notes: t.notes,
+        screenshots: t.screenshots,
+        timestamp: t.timestamp,          // ✅ entry timestamp
+        open_timestamp: t.open_timestamp,
+        close_timestamp: t.exit_timestamp || null, // ✅ exit timestamp
+        unique_id: t.unique_id
+      })) || [];
     } catch (error) {
       console.error('Error loading manual trades:', error);
       this.trades = [];
     }
   }
 
-  // API trades loader (exact columns, no fallback)
+  // API trades loader
   async loadAPITrades(userId) {
     try {
       const response = await fetch(`${API_URL}/api/user-api-trades/${userId}`);
       if (!response.ok) throw new Error('Network response was not ok');
 
       const data = await response.json();
-      if (!data.trades) this.trades = [];
-      else {
-        this.trades = data.trades.map(t => ({
-          id: t.id,
-          user_id: t.user_id,
-          account_id: t.account_id,
-          platform: t.platform,
-          symbol: t.symbol,
-          trade_type: t.trade_type,
-          quantity: t.quantity,
-          price: t.price,
-          exit_price: t.exit_price,
-          pnl: t.pnl,
-          timestamp: t.timestamp,
-          created_at: t.created_at,
-          ticket: t.ticket,
-          notes: t.notes,
-          screenshots: t.screenshots,
-          strategy: t.strategy,
-          unique_id: t.unique_id
-        }));
-      }
+    console.log("API TRADES RESPONSE:", data);
+
+      this.trades = data.trades?.map(t => ({
+   
+  
+
+        id: t.id,
+        user_id: t.user_id,
+        account_id: t.account_id,
+        platform: t.platform,
+        symbol: t.symbol,
+        trade_type: t.trade_type,
+        quantity: t.quantity,
+        price: t.price,
+        exit_price: t.exit_price,
+        pnl: t.pnl,
+        timestamp: t.timestamp,   
+        open_timestamp: t.open_timestamp,          // ✅ entry timestamp
+        close_timestamp: t.close_timestamp || t.exit_timestamp || null, // ✅ exit timestamp
+        created_at: t.created_at,
+        ticket: t.ticket,
+        notes: t.notes,
+        screenshots: t.screenshots,
+        strategy: t.strategy,
+        unique_id: t.unique_id
+      })) || [];
     } catch (error) {
       console.error('Error loading API trades:', error);
+    
       this.trades = [];
     }
   }
@@ -114,6 +118,8 @@ export class TradeManager {
           notes: t.notes,
           screenshots: t.screenshots,
           timestamp: t.timestamp,
+          open_timestamp: t.open_timestamp,
+          close_timestamp: t.exit_timestamp || null,
           unique_id: t.unique_id
         }));
         allTrades.push(...manualTrades);
@@ -121,6 +127,7 @@ export class TradeManager {
 
       if (apiRes.trades) {
         const apiTrades = apiRes.trades.map(t => ({
+
           id: t.id,
           user_id: t.user_id,
           account_id: t.account_id,
@@ -132,6 +139,8 @@ export class TradeManager {
           exit_price: t.exit_price,
           pnl: t.pnl,
           timestamp: t.timestamp,
+          open_timestamp: t.open_timestamp,
+          close_timestamp: t.close_timestamp || t.exit_timestamp || null,
           created_at: t.created_at,
           ticket: t.ticket,
           notes: t.notes,
@@ -145,16 +154,21 @@ export class TradeManager {
       this.trades = allTrades;
     } catch (error) {
       console.error('Error loading all trades:', error);
+
+
+
+  
       this.trades = [];
     }
+
+  
   }
 
-  // Dummy setMode for Dashboard integration
   setMode(mode) {
     this.mode = mode;
   }
 
-  // Stats calculation (optional, based on exact pnl column)
+  // Stats calculation
   calculateStats(trades) {
     let profitTrades = 0;
     let totalPnL = 0;

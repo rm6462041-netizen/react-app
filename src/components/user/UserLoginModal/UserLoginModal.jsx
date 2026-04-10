@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import './UserLoginModal.css';
 
+
 function UserLoginModal({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('login'); // 'login', 'signup', 'forgot'
   const [loginMethod, setLoginMethod] = useState('email'); // 'email' or 'phone'
@@ -24,12 +25,13 @@ function UserLoginModal({ isOpen, onClose }) {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [editData, setEditData] = useState({});
 
-  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+   const API_URL = "http://localhost:5000" ;
+  // const API_URL ="http://10.203.185.251:5000"
 
   // Load user from localStorage
   useEffect(() => {
     const storedUser = localStorage.getItem('currentUser');
-    const storedToken = localStorage.getItem('authToken');
+    const storedToken = localStorage.getItem("accessToken");
     
     if (storedUser && storedToken) {
       try {
@@ -86,16 +88,15 @@ function UserLoginModal({ isOpen, onClose }) {
     try {
       const response = await fetch(`${API_URL}/api/login`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(loginData)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(loginData),
+        credentials: 'include'
       });
 
       const data = await response.json();
 
       if (data.success) {
-        localStorage.setItem('authToken', data.token);
+        localStorage.setItem('accessToken', data.accessToken);
         
         const userData = {
           ID: data.user.ID,
@@ -111,7 +112,6 @@ function UserLoginModal({ isOpen, onClose }) {
         setCurrentUser(userData);
         
         alert(`Welcome back ${data.user.firstName}!`);
-        // Close modal after successful login
         onClose();
       } else {
         alert('Error: ' + data.error);
@@ -146,16 +146,15 @@ function UserLoginModal({ isOpen, onClose }) {
     try {
       const response = await fetch(`${API_URL}/api/register`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(signupData)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(signupData),
+        credentials: 'include'
       });
 
       const data = await response.json();
 
       if (data.success) {
-        localStorage.setItem('authToken', data.token);
+        localStorage.setItem('accessToken', data.accessToken);
         
         const userData = {
           ID: data.user.ID,
@@ -190,10 +189,9 @@ function UserLoginModal({ isOpen, onClose }) {
     try {
       const response = await fetch(`${API_URL}/api/forgot-password`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ email: formData.forgotEmail })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: formData.forgotEmail }),
+        credentials: 'include'
       });
 
       const data = await response.json();
@@ -210,16 +208,17 @@ function UserLoginModal({ isOpen, onClose }) {
       setLoading(false);
     }
   };
-// ✅ LOGOUT
-const handleLogout = () => {
-  if (window.confirm('Are you sure you want to logout?')) {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('currentUser');
-    setCurrentUser(null);
-    setActiveTab('login');
-    window.alert('Logged out successfully!');
-  }
-};
+
+  // ✅ LOGOUT
+  const handleLogout = () => {
+    if (window.confirm('Are you sure you want to logout?')) {
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('currentUser');
+      setCurrentUser(null);
+      setActiveTab('login');
+      window.alert('Logged out successfully!');
+    }
+  };
 
   // ✅ EDIT PROFILE
   const handleEditProfile = () => {
@@ -236,7 +235,7 @@ const handleLogout = () => {
   };
 
   const handleUpdateProfile = async () => {
-    const authToken = localStorage.getItem('authToken');
+    const accessToken = localStorage.getItem('accessToken');
     
     const updatedData = {
       firstName: editData.firstName,
@@ -250,10 +249,11 @@ const handleLogout = () => {
       const response = await fetch(`${API_URL}/api/update-profile`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${authToken}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(updatedData)
+        body: JSON.stringify(updatedData),
+        credentials: 'include'
       });
 
       const data = await response.json();
@@ -283,23 +283,24 @@ const handleLogout = () => {
   };
 
   const confirmDeleteAccount = async (password) => {
-    const authToken = localStorage.getItem('authToken');
+    const accessToken = localStorage.getItem('accessToken');
     
     try {
       const response = await fetch(`${API_URL}/api/delete-account`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${authToken}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ password: password })
+        body: JSON.stringify({ password: password }),
+        credentials: 'include'
       });
 
       const data = await response.json();
 
       if (data.success) {
         alert('Account deleted successfully!');
-        localStorage.removeItem('authToken');
+        localStorage.removeItem('accessToken');
         localStorage.removeItem('currentUser');
         setCurrentUser(null);
         setActiveTab('login');
@@ -336,14 +337,13 @@ const handleLogout = () => {
             <div className="logo">
               <i className="fas fa-chart-line"></i>
               <div className="logo-text">
-                <span className="pip">PIP</span><span className="x">X</span>
+                <span className="pip">PIP</span><span className="x"> Trade</span>
                 <span className="trade"> Trade</span>
               </div>
             </div>
           </div>
           
           <div className="header-right">
-            {/* Dashboard Button - Show when logged in */}
             {currentUser && (
               <a href="../index.html" className="dashboard-btn">
                 <i className="fas fa-tachometer-alt"></i>
@@ -351,7 +351,6 @@ const handleLogout = () => {
               </a>
             )}
             
-            {/* User Profile Section - Show when logged in */}
             {currentUser && (
               <div className="user-profile-section">
                 <button className="settings-gear" onClick={handleEditProfile}>
@@ -366,10 +365,7 @@ const handleLogout = () => {
 
         {/* MAIN CONTENT */}
         <div className="modal-body">
-        { /*</div> <div className="login-wrapper">*/}
-            <div className={`login-wrapper ${activeTab === 'signup' ? 'signup-active' : ''}`}>
-
-            
+          <div className={`login-wrapper ${activeTab === 'signup' ? 'signup-active' : ''}`}>
 
             {/* RIGHT SIDE - FORMS */}
             <div className="form-section">
@@ -383,7 +379,6 @@ const handleLogout = () => {
                       <p>Sign in to your trading account</p>
                     </div>
                     
-                    {/* Login Options */}
                     <div className="login-options">
                       <button 
                         type="button" 
@@ -401,7 +396,6 @@ const handleLogout = () => {
                       </button>
                     </div>
                     
-                    {/* Email Login */}
                     {loginMethod === 'email' && (
                       <div className="form-group">
                         <label>Email Address</label>
@@ -417,7 +411,6 @@ const handleLogout = () => {
                       </div>
                     )}
                     
-                    {/* Phone Login */}
                     {loginMethod === 'phone' && (
                       <div className="form-group">
                         <label>Phone Number</label>
@@ -478,9 +471,7 @@ const handleLogout = () => {
                       </button>
                     </div>
                   </form>
-                )}
-
-                {/* SIGNUP FORM */}
+                )}                           {/* SIGNUP FORM */}
                 {!currentUser && activeTab === 'signup' && (
                   <form id="signupForm" onSubmit={handleSignupSubmit}>
                     <div className="form-header">

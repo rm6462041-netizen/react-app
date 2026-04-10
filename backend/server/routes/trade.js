@@ -155,7 +155,8 @@ router.post('/save-bulk-trades', async (req, res) => {
         results: results
     });
 });
-// *** SAVE API TRADES (STRICT BACKEND BALANCE CHANGE ONLY) ***
+
+// *** SAVE API TRADES (WITH FULL TIMESTAMP SUPPORT) ***
 router.post('/save-api-trade', async (req, res) => {
     try {
         let trades = req.body;
@@ -177,14 +178,25 @@ router.post('/save-api-trade', async (req, res) => {
                     entry_price,
                     exit_price,
                     profit,
+                    open_time,
                     close_time,
+                    open_timestamp,    // ✅ NEW
+                    close_timestamp,   // ✅ NEW
                     balance,
                     account_currency
                 } = trade;
 
+                // ✅ Basic validation
                 if (!account_id || !ticket || balance === undefined) {
                     errorCount++;
                     results.push({ success: false, error: "missing required fields" });
+                    continue;
+                }
+
+                // 🔥 Timestamp validation (IMPORTANT)
+                if (!open_timestamp || !close_timestamp) {
+                    errorCount++;
+                    results.push({ success: false, ticket, error: "missing timestamps" });
                     continue;
                 }
 
@@ -203,13 +215,13 @@ router.post('/save-api-trade', async (req, res) => {
                 const userId = accRes.rows[0].user_id;
                 const oldBalance = Number(accRes.rows[0].balance);
 
-                // 2️⃣ CALCULATE ACCOUNT BALANCE CHANGE %
+                // 2️⃣ CALCULATE BALANCE CHANGE %
                 let balanceChangePercent = 0;
                 if (oldBalance > 0) {
                     balanceChangePercent = ((balance - oldBalance) / oldBalance) * 100;
                 }
 
-                // 3️⃣ UPDATE ACCOUNT (SOURCE OF TRUTH)
+                // 3️⃣ UPDATE ACCOUNT
                 await pool.query(
                     `
                     UPDATE mt5_accounts
@@ -222,7 +234,7 @@ router.post('/save-api-trade', async (req, res) => {
                     [balance, balanceChangePercent, account_currency, account_id]
                 );
 
-                // 4️⃣ INSERT TRADE (NO EXTRA CALC)
+                // 4️⃣ INSERT TRADE (🔥 UPDATED)
                 const tradeRes = await pool.query(
                     `
                     INSERT INTO api_trades
@@ -237,9 +249,11 @@ router.post('/save-api-trade', async (req, res) => {
                         exit_price,
                         pnl,
                         timestamp,
+                        open_timestamp,
+                        close_timestamp,
                         ticket
                     )
-                    VALUES ($1,$2,'mt5',$3,$4,$5,$6,$7,$8,$9,$10)
+                    VALUES ($1,$2,'mt5',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
                     ON CONFLICT (ticket) DO NOTHING
                     RETURNING id
                     `,
@@ -252,7 +266,9 @@ router.post('/save-api-trade', async (req, res) => {
                         entry_price,
                         exit_price,
                         profit,
-                        close_time,
+                        close_time,        // 🟡 readable (old)
+                        open_timestamp,    // 🟢 ENTRY
+                        close_timestamp,   // 🔴 EXIT
                         ticket
                     ]
                 );
@@ -283,6 +299,7 @@ router.post('/save-api-trade', async (req, res) => {
         res.status(500).json({ success: false, error: err.message });
     }
 });
+
 
 // ============================
 // GET MANUAL TRADES

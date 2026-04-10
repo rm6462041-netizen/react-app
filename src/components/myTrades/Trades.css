@@ -270,65 +270,10 @@ color: crimson;
   opacity: 0.9;
 }
 
-/* ===============================
-   Symbol with Icon Styling (आपकी symbol-tv CSS)
-================================ */
-.symbol-tv {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
 
-/* flags wrapper */
-.symbol-tv .flags {
-  position: relative;
-  width: 26px;
-  height: 18px;
-  flex-shrink: 0;
-}
 
-/* common */
-.symbol-tv .flag {
-  position: absolute;
-  object-fit: cover;
-  border-radius: 50%;
-  border: none;
-}
 
-/* QUOTE currency (peeche, overlap) */
-.symbol-tv .flag.quote {
-  width: 14px;
-  height: 14px;
-  left: 8px;
-  top: -1px;
-  z-index: 1;
-}
 
-/* BASE currency (front, fully visible) */
-.symbol-tv .flag.base {
-  width: 14px;
-  height: 14px;
-  left: 0;
-  top: 2px;
-  z-index: 2;
-}
-
-.symbol-tv .symbol-text {
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.single-icon {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  object-fit: cover;
-  flex-shrink: 0;
-}
 
 /* ===============================
    Empty State
@@ -388,23 +333,8 @@ color: crimson;
   .trade-item > div:nth-child(2) small {
     font-size: 8px;
   }
-  
-  .symbol-tv .flags {
-    width: 24px;
-    height: 16px;
-  }
-  
-  .symbol-tv .flag.quote,
-  .symbol-tv .flag.base {
-    width: 13px;
-    height: 13px;
-  }
-  
-  .single-icon {
-    width: 16px;
-    height: 16px;
-  }
-}
+
+} 
 
 /* For very small screens */
 @media (max-width: 480px) {
@@ -468,21 +398,7 @@ color: crimson;
     font-size: 8px;
   }
   
-  .symbol-tv .flags {
-    width: 24px;
-    height: 16px;
-  }
-  
-  .symbol-tv .flag.quote,
-  .symbol-tv .flag.base {
-    width: 13px;
-    height: 13px;
-  }
-  
-  .single-icon {
-    width: 19px;
-    height: 19px;
-  }
+
 }
 /* ===============================
    Compact Mode (when5 columns )
@@ -506,5 +422,9 @@ color: crimson;
     gap: 10px;
   }
 }
+
+
+
+
 
 

@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom"; // <-- added
 import "./Trades.css";
 import SymbolWithIcon from "../Common/SymbolWithIcon";
 import { FaEllipsisVertical } from "react-icons/fa6";
@@ -16,6 +17,8 @@ const FIELDS = [
 const LOCAL_STORAGE_KEY = "trades_visible_fields";
 
 function TradesList({ trades = [] }) {
+  const navigate = useNavigate(); // <-- added
+
   const [activeTab, setActiveTab] = useState("closed"); // "open" or "closed"
   const [showSettings, setShowSettings] = useState(false);
 
@@ -30,10 +33,7 @@ function TradesList({ trades = [] }) {
   // Close dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target)
-      ) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
         setShowSettings(false);
       }
     };
@@ -47,13 +47,8 @@ function TradesList({ trades = [] }) {
   // =======================
   const filteredTrades = useMemo(() => {
     return trades
-      .filter((t) =>
-        activeTab === "open" ? !t.exit_price : !!t.exit_price
-      )
-      .sort(
-        (a, b) =>
-          new Date(b.timestamp) - new Date(a.timestamp)
-      )
+      .filter((t) => (activeTab === "open" ? !t.exit_price : !!t.exit_price))
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
       .slice(0, 12);
   }, [trades, activeTab]);
 
@@ -74,12 +69,22 @@ function TradesList({ trades = [] }) {
   };
 
   // =======================
+  // Click handler to open ThatTrade
+  // =======================
+  const handleTradeClick = (trade) => {
+    navigate(`/trade/${trade.unique_id || trade.id}`, {
+      state: { tradeData: trade },
+    });
+  };
+
+  // =======================
   // Render cell value
   // =======================
   const renderValue = (t, key) => {
     switch (key) {
       case "symbol":
-        return <SymbolWithIcon symbol={t.symbol} />;
+        return <SymbolWithIcon symbol={t.symbol} size="md" />;
+
       case "timestamp": {
         const d = new Date(t.timestamp);
         return (
@@ -94,23 +99,9 @@ function TradesList({ trades = [] }) {
           </div>
         );
       }
-      case "pnl": {
-        const pnl = Number(t.pnl || 0);
-        return (
-          <span className={pnl >= 0 ? "positive" : "negative"}>
-            {pnl >= 0 ? "+" : "-"}${Math.abs(pnl).toFixed(2)}
-          </span>
-        );
-      }
-      case "price":
-      case "exit_price":
-        return t[key] ? Number(t[key]).toFixed(2) : "--";
-      case "trade_type":
-        return t.trade_type || "--";
-      case "strategy":
-        return t.strategy || "--";
+
       default:
-        return "--";
+        return t[key];
     }
   };
 
@@ -146,13 +137,9 @@ function TradesList({ trades = [] }) {
             <div className="settings-dropdown">
               {FIELDS.map((f) => {
                 const checked = visibleFields.includes(f.key);
-                const disabled =
-                  !checked && visibleFields.length >= 5;
+                const disabled = !checked && visibleFields.length >= 5;
                 return (
-                  <label
-                    key={f.key}
-                    className={disabled ? "disabled" : ""}
-                  >
+                  <label key={f.key} className={disabled ? "disabled" : ""}>
                     <input
                       type="checkbox"
                       checked={checked}
@@ -179,14 +166,14 @@ function TradesList({ trades = [] }) {
       {/* ================= ROWS ================= */}
       <div className="trades-list scrollable">
         {filteredTrades.length === 0 ? (
-          <div className="empty-state">
-            No {activeTab} trades
-          </div>
+          <div className="empty-state">No {activeTab} trades</div>
         ) : (
           filteredTrades.map((t) => (
             <div
               key={t.unique_id || t.id || t.timestamp}
               className="trade-item"
+              onClick={() => handleTradeClick(t)} // <-- added click here
+              style={{ cursor: "pointer" }} // optional, shows pointer
             >
               {visibleFields.map((key) => (
                 <div key={key}>{renderValue(t, key)}</div>

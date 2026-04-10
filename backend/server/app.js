@@ -32,6 +32,9 @@ const passwordRoutes = require('./routes/password');
 const mt5Routes = require('./routes/mt5');
 const metaRoutes = require('./routes/meta');
 const wsBroadcast = require('./uploads/middleware/ws-broadcast');
+const settingsRoutes = require('./routes/settings');
+const cookieParser = require('cookie-parser');
+// const tickRoutes = require("./routes/tickdata");
 
 
 // **sab API routes pe automatically apply**
@@ -44,6 +47,10 @@ app.use('/api', analyticsRoutes);
 app.use('/api', passwordRoutes);
 app.use('/api', mt5Routes);
 app.use('/api', metaRoutes);
+app.use('/api', settingsRoutes);
+app.use(cookieParser());
+
+// app.use("/api", tickRoutes);
 
 app.use(express.static(path.join(__dirname, '../../js')));
 

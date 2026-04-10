@@ -4,15 +4,55 @@ const pool = require('../config/database');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-    throw new Error("JWT_SECRET missing in environment");
+// ✅ DO ALAG SECRETS
+const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
+
+if (!JWT_ACCESS_SECRET || !JWT_REFRESH_SECRET) {
+    throw new Error("JWT secrets missing in environment");
 }
+
+// ✅ COOKIE SETTINGS
+const COOKIE_OPTIONS = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+    sameSite: 'lax',
+    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+};
+
+// ✅ HELPER FUNCTION - Generate Tokens
+const generateTokens = async (userId) => {
+    // Access Token (24 hours)
+    const accessToken = jwt.sign(
+        { userId: userId },
+        JWT_ACCESS_SECRET,
+        { expiresIn: '24h' }
+    );
+
+    // Refresh Token (30 days)
+    const refreshToken = jwt.sign(
+        { userId: userId },
+        JWT_REFRESH_SECRET,
+        { expiresIn: '30d' }
+    );
+
+    // Calculate expiry (30 days from now)
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 30);
+
+    // Save refresh token to database
+    await pool.query(
+        `INSERT INTO refresh_tokens (user_id, token, expires_at) 
+         VALUES ($1, $2, $3)`,
+        [userId, refreshToken, expiresAt]
+    );
+
+    return { accessToken, refreshToken, expiresAt };
+};
 
 // AUTH CHECK MIDDLEWARE
 const authCheck = async (req, res, next) => {
     try {
-        // ✅ Header check
         const authHeader = req.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return res.status(401).json({ 
@@ -22,17 +62,11 @@ const authCheck = async (req, res, next) => {
             });
         }
 
-        // ✅ Token extract (pehle hi)
         const token = authHeader.split(' ')[1];
-
-        // ✅ Verify JWT token
-        const decoded = jwt.verify(token, JWT_SECRET);
-        console.log('✅ Decoded successfully');
-        console.log('🔐 decoded object:', decoded);
-        console.log('🔐 decoded.userId:', decoded.userId);
-
-     
-        // ✅ Check if user exists and NOT deleted
+        
+        // ✅ Access token verify
+        const decoded = jwt.verify(token, JWT_ACCESS_SECRET);
+        
         const userResult = await pool.query(
             `SELECT "ID" FROM public."user" WHERE "ID" = $1 AND "isDeleted" = false`,
             [decoded.userId]
@@ -46,15 +80,24 @@ const authCheck = async (req, res, next) => {
             });
         }
 
-        // ✅ Attach userId to request
-       req.userId = decoded.userId;
+        req.userId = decoded.userId;
         next();
 
     } catch (error) {
         console.error('Auth error:', error.message);
+        
+        // ✅ Special flag for expired access token
+        if (error.name === 'TokenExpiredError') {
+            return res.status(401).json({ 
+                success: false, 
+                error: 'Access token expired',
+                expired: true  // Frontend ko bataye refresh karo
+            });
+        }
+        
         return res.status(401).json({ 
             success: false, 
-            error: 'Invalid or expired token',
+            error: 'Invalid token',
             logout: true 
         });
     }
@@ -67,36 +110,32 @@ router.post('/register', async (req, res) => {
     console.log("💰 REGISTER:", { firstName, email, preferred_currency });
 
     try {
-        // Hash password
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(password, saltRounds);
 
         const result = await pool.query(
             `INSERT INTO public."user" (
-                "firstName",
-                "lastName",
-                "email", 
-                "phone",
-                "password",
-                "preferred_currency",
-                "isDeleted"
+                "firstName", "lastName", "email", "phone",
+                "password", "preferred_currency", "isDeleted"
             ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
             [firstName, lastName, email, phone, hashedPassword, preferred_currency, false]
         );
 
         const newUser = result.rows[0];
         
-        // Generate JWT token
-        const token = jwt.sign(
-            { userId: newUser.ID, email: newUser.email },
-            JWT_SECRET,
-            { expiresIn: '24h' }
-        );
+        // ✅ Generate both tokens
+        const { accessToken, refreshToken, expiresAt } = await generateTokens(newUser.ID);
+
+        // ✅ Set refresh token in cookie
+        res.cookie('refreshToken', refreshToken, COOKIE_OPTIONS);
+
+        console.log("✅ REGISTER SUCCESSFUL - User:", newUser.ID);
         
         res.json({ 
             success: true, 
             message: 'User registered successfully!',
-            token: token,
+            accessToken: accessToken,  // ✅ accessToken bhejo
+            refreshExpiresAt: expiresAt,
             user: {
                 ID: newUser.ID,
                 firstName: newUser.firstName,
@@ -146,8 +185,6 @@ router.post('/login', async (req, res) => {
         }
 
         const user = result.rows[0];
-
-        // Verify password
         const passwordMatch = await bcrypt.compare(password, user.password);
         
         if (!passwordMatch) {
@@ -157,24 +194,19 @@ router.post('/login', async (req, res) => {
             });
         }
 
-        // Generate JWT token
-        const token = jwt.sign(
-            { userId: user.ID, email: user.email },
-            JWT_SECRET,
-            { expiresIn: '24h' }
-        );
+        // ✅ Generate both tokens
+        const { accessToken, refreshToken, expiresAt } = await generateTokens(user.ID);
 
+        // ✅ Set refresh token in cookie
+        res.cookie('refreshToken', refreshToken, COOKIE_OPTIONS);
 
-    // ✅ DEBUG CODE YAHAN DAALO:
-    console.log("🔐 BACKEND: Token generated for user:", user.ID);
-    console.log("🔐 BACKEND: Token first 50 chars:", token.substring(0, 50) + "...");
-    console.log("🔐 BACKEND: Full token length:", token.length);
+        console.log("✅ LOGIN SUCCESSFUL - User:", user.ID);
+        console.log("🔐 Refresh expires:", expiresAt);
 
-
-        console.log("✅ LOGIN SUCCESSFUL");
         res.json({
             success: true,
-            token: token,
+            accessToken: accessToken,  // ✅ accessToken bhejo
+            refreshExpiresAt: expiresAt,
             user: {
                 ID: user.ID,
                 firstName: user.firstName,
@@ -192,6 +224,103 @@ router.post('/login', async (req, res) => {
     }
 });
 
+// ✅ NEW - REFRESH TOKEN ENDPOINT
+router.post('/refresh-token', async (req, res) => {
+    try {
+        // Get refresh token from cookie
+        const refreshToken = req.cookies?.refreshToken;
+
+        if (!refreshToken) {
+            return res.status(401).json({ 
+                success: false, 
+                error: 'Refresh token required',
+                logout: true 
+            });
+        }
+
+        // Verify refresh token
+        const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
+
+        // Check database
+        const tokenResult = await pool.query(
+            `SELECT * FROM refresh_tokens 
+             WHERE token = $1 AND user_id = $2 AND expires_at > NOW()`,
+            [refreshToken, decoded.userId]
+        );
+
+        if (tokenResult.rows.length === 0) {
+            return res.status(401).json({ 
+                success: false, 
+                error: 'Invalid or expired refresh token',
+                logout: true 
+            });
+        }
+
+        // Delete old token
+        await pool.query(
+            `DELETE FROM refresh_tokens WHERE token = $1`,
+            [refreshToken]
+        );
+
+        // Generate NEW tokens (30 days reset)
+        const { accessToken, refreshToken: newRefreshToken, expiresAt } = 
+            await generateTokens(decoded.userId);
+
+        // Set new cookie
+        res.cookie('refreshToken', newRefreshToken, COOKIE_OPTIONS);
+
+        console.log("🔄 REFRESH TOKEN USED - User:", decoded.userId, "New expiry:", expiresAt);
+
+        res.json({
+            success: true,
+            accessToken: accessToken,
+            refreshExpiresAt: expiresAt
+        });
+
+    } catch (error) {
+        console.error('❌ Refresh token error:', error.message);
+        
+        if (error.name === 'TokenExpiredError') {
+            // Delete expired token from database
+            try {
+                const decoded = jwt.decode(refreshToken);
+                if (decoded?.userId) {
+                    await pool.query(
+                        `DELETE FROM refresh_tokens WHERE token = $1`,
+                        [refreshToken]
+                    );
+                }
+            } catch (deleteError) {}
+        }
+        
+        return res.status(401).json({ 
+            success: false, 
+            error: 'Refresh token expired',
+            logout: true 
+        });
+    }
+});
+
+// ✅ UPDATED LOGOUT
+router.post('/logout', async (req, res) => {
+    const refreshToken = req.cookies?.refreshToken;
+
+    if (refreshToken) {
+        // Delete from database
+        await pool.query(`DELETE FROM refresh_tokens WHERE token = $1`, [refreshToken]);
+        
+        // Clear cookie
+        res.clearCookie('refreshToken', COOKIE_OPTIONS);
+    }
+
+    console.log("🚪 LOGOUT SUCCESSFUL");
+    
+    res.json({
+        success: true,
+        message: 'Logged out successfully'
+    });
+});
+
 // UPDATE PROFILE
 router.post('/update-profile', authCheck, async (req, res) => {
     const userId = req.userId;
@@ -199,7 +328,6 @@ router.post('/update-profile', authCheck, async (req, res) => {
 
     console.log("👤 UPDATE PROFILE - Authenticated User ID:", userId);
 
-    // Validate password if provided
     if (password && password.trim().length < 6) {
         return res.status(400).json({ 
             success: false, 
@@ -208,7 +336,6 @@ router.post('/update-profile', authCheck, async (req, res) => {
     }
 
     try {
-        // Get current user
         const currentUserResult = await pool.query(
             `SELECT * FROM public."user" WHERE "ID" = $1 AND "isDeleted" = false`,
             [userId]
@@ -220,7 +347,6 @@ router.post('/update-profile', authCheck, async (req, res) => {
 
         const currentUser = currentUserResult.rows[0];
 
-        // Check email duplicate
         if (email && email !== currentUser.email) {
             const emailCheck = await pool.query(
                 `SELECT "ID" FROM public."user" WHERE "email" = $1 AND "ID" != $2 AND "isDeleted" = false`,
@@ -235,7 +361,6 @@ router.post('/update-profile', authCheck, async (req, res) => {
             }
         }
 
-        // Check phone duplicate
         if (phone && phone !== currentUser.phone) {
             const phoneCheck = await pool.query(
                 `SELECT "ID" FROM public."user" WHERE "phone" = $1 AND "ID" != $2 AND "isDeleted" = false`,
@@ -250,7 +375,6 @@ router.post('/update-profile', authCheck, async (req, res) => {
             }
         }
 
-        // Hash password if provided
         let hashedPassword = null;
         if (password) {
             const saltRounds = 10;
@@ -313,7 +437,7 @@ router.post('/update-profile', authCheck, async (req, res) => {
     }
 });
 
-// GET USER PROFILE (PROTECTED)
+// GET USER PROFILE
 router.get('/user-profile', authCheck, async (req, res) => {
     const userId = req.userId;
 
@@ -355,7 +479,7 @@ router.get('/user-profile', authCheck, async (req, res) => {
     }
 });
 
-// UPDATE CURRENCY (PROTECTED)
+// UPDATE CURRENCY
 router.post('/update-currency', authCheck, async (req, res) => {
     const { currency } = req.body;
     const userId = req.userId;
@@ -402,7 +526,7 @@ router.post('/update-currency', authCheck, async (req, res) => {
     }
 });
 
-// DELETE USER ACCOUNT (PROTECTED) - SIMPLE VERSION
+// DELETE USER ACCOUNT
 router.delete('/delete-account', authCheck, async (req, res) => {
     const userId = req.userId;
     const { password } = req.body;
@@ -417,7 +541,6 @@ router.delete('/delete-account', authCheck, async (req, res) => {
     }
 
     try {
-        // Get user with password
         const userResult = await pool.query(
             `SELECT * FROM public."user" WHERE "ID" = $1 AND "isDeleted" = false`,
             [userId]
@@ -431,8 +554,6 @@ router.delete('/delete-account', authCheck, async (req, res) => {
         }
 
         const user = userResult.rows[0];
-        
-        // Verify password
         const passwordMatch = await bcrypt.compare(password, user.password);
         
         if (!passwordMatch) {
@@ -442,7 +563,10 @@ router.delete('/delete-account', authCheck, async (req, res) => {
             });
         }
 
-        // ✅ SIMPLE SOFT DELETE - ONLY isDeleted = true
+        // Delete refresh tokens first
+        await pool.query(`DELETE FROM refresh_tokens WHERE user_id = $1`, [userId]);
+
+        // Soft delete user
         await pool.query(
             `UPDATE public."user" 
              SET "isDeleted" = true 
@@ -450,11 +574,14 @@ router.delete('/delete-account', authCheck, async (req, res) => {
             [userId]
         );
 
+        // Clear cookie
+        res.clearCookie('refreshToken', COOKIE_OPTIONS);
+
         console.log("✅ ACCOUNT DELETED SUCCESSFULLY");
         
         res.json({
             success: true,
-            message: 'Account deleted successfully. Contact admin to restore.'
+            message: 'Account deleted successfully.'
         });
 
     } catch (error) {
@@ -463,22 +590,11 @@ router.delete('/delete-account', authCheck, async (req, res) => {
     }
 });
 
-// LOGOUT (Optional)
-router.post('/logout', authCheck, (req, res) => {
-    console.log("🚪 LOGOUT - User ID:", req.userId);
-    
-    res.json({
-        success: true,
-        message: 'Logged out successfully'
-    });
-});
-
-// ADMIN RESTORE ROUTE (Optional - Add if needed)
+// ADMIN RESTORE
 router.post('/admin/restore-user/:userId', async (req, res) => {
     const { userId } = req.params;
     const { adminSecret } = req.body;
     
-    // Simple admin check
     if (adminSecret !== process.env.ADMIN_SECRET) {
         return res.status(403).json({ error: 'Admin access only' });
     }
@@ -498,6 +614,5 @@ router.post('/admin/restore-user/:userId', async (req, res) => {
     }
 });
 
-
-
 module.exports = router;
+module.exports.authCheck = authCheck;
